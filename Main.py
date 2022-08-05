@@ -1,9 +1,12 @@
 import copy
 import math
+import pygame
+
 import Graphical
 
-
 MOVE_COST = 1
+COLORS_DICT = {"#": (0, 0, 0), " ": (255, 255, 255), "A": (0, 255, 0), "B": (255, 0, 0), "-": (150, 189, 128),
+               "?": (235, 231, 113)}
 
 
 class Tile:
@@ -175,43 +178,59 @@ def getResultState(pos, action):
 
 
 class Agent:
+    frontier = None
+    explored_set = []
+
     def __init__(self, matrix, metric=None):
         self.matrix = matrix
         start = matrix.start_position
         self.initial_state = [start[0], start[1]]
         self.metric = metric
 
-    def start_greedy(self):
-        return self.explore_maze(Greedy(self.matrix.end_position, self.metric))
-
-    def start_a_star(self):
-        return self.explore_maze(A_star(self.matrix.end_position, self.metric))
-
-    def start_breadth_search(self):
-        return self.explore_maze(Queue())
-
-    def start_depth_search(self):
-        return self.explore_maze(Stack())
-
-    def explore_maze(self, frontier):
+    def start_greedy(self, steps=None):
+        self.frontier = Greedy(self.matrix.end_position, self.metric)
         node = Node(self.initial_state, None, None, 0)
-        frontier.push(node)
-        explored_set = []
+        self.frontier.push(node)
+        self.explored_set = []
+        return self.explore_maze(steps)
 
-        while frontier.length > 0:
-            element = frontier.pop()
-            if element.state not in explored_set:
+    def start_a_star(self, steps=None):
+        self.frontier = A_star(self.matrix.end_position, self.metric)
+        node = Node(self.initial_state, None, None, 0)
+        self.frontier.push(node)
+        self.explored_set = []
+        return self.explore_maze(steps)
+
+    def start_breadth_search(self, steps=None):
+        self.frontier = Queue()
+        node = Node(self.initial_state, None, None, 0)
+        self.frontier.push(node)
+        self.explored_set = []
+        return self.explore_maze(steps)
+
+    def start_depth_search(self, steps=None):
+        self.frontier = Stack()
+        node = Node(self.initial_state, None, None, 0)
+        self.frontier.push(node)
+        self.explored_set = []
+        return self.explore_maze(steps)
+
+    def explore_maze(self, steps):
+        while self.frontier.length > 0:
+            element = self.frontier.pop()
+            if element.state not in self.explored_set:
                 if self.matrix.goal_test(element.state):
-                    for searchedPos in explored_set:
-                        self.matrix.set_search_tile(searchedPos)
-                    goal_path = element.get_pos_on_path()
-                    for pos in goal_path:
-                        self.matrix.set_on_the_way_tile(pos)
+                    self.matrix.update_matrix(self.explored_set, element)
                     return True, element
-                explored_set.append(element.state)
+                self.explored_set.append(element.state)
                 possible_actions = self.matrix.getPossibleActions(element.state)
                 for action in possible_actions:
-                    frontier.push(element.move_node_and_copy(action, MOVE_COST))
+                    self.frontier.push(element.move_node_and_copy(action, MOVE_COST))
+            if steps is not None:
+                steps -= 1
+                if steps == 0:
+                    self.matrix.update_matrix(self.explored_set, element)
+                    return False, None
         return False, None
 
 
@@ -281,6 +300,14 @@ class Matrix:
         else:
             return False
 
+    def update_matrix(self, explored_set, element):
+        for searchedPos in explored_set:
+            self.remove_on_the_way_tile(searchedPos)
+            self.set_search_tile(searchedPos)
+        goal_path = element.get_pos_on_path()
+        for pos in goal_path:
+            self.set_on_the_way_tile(pos)
+
     def set_search_tile(self, pos):
         if (pos[0] != self.start_position[0] or pos[1] != self.start_position[1]) and \
                 (pos[0] != self.end_position[0] or pos[1] != self.end_position[1]):
@@ -290,6 +317,9 @@ class Matrix:
         if (pos[0] != self.start_position[0] or pos[1] != self.start_position[1]) and \
                 (pos[0] != self.end_position[0] or pos[1] != self.end_position[1]):
             self.matrix[pos[1]][pos[0]].on_the_way = True
+
+    def remove_on_the_way_tile(self, pos):
+        self.matrix[pos[1]][pos[0]].on_the_way = False
 
     def display_maze(self, pos=None):
         for row in range(len(self.matrix)):
@@ -306,6 +336,19 @@ class Matrix:
                     else:
                         r += self.matrix[row][col].name
             print(r)
+
+    def display_maze_pygame(self, window, square_length, offset):
+        mult = offset + square_length
+        for row in range(len(self.matrix)):
+            for col in range(len(self.matrix[0])):
+                tile = self.matrix[row][col]
+                tile_name = tile.name
+                if tile.on_the_way:
+                    tile_name = "-"
+                elif tile.searched:
+                    tile.name = "?"
+                color = COLORS_DICT.get(tile_name)
+                pygame.draw.rect(window, color, (col*mult, row*mult, square_length, square_length))
 
 
 def get_distance(pos_1, pos_2, metric):
@@ -324,14 +367,15 @@ def get_distance(pos_1, pos_2, metric):
         raise ValueError
 
 
-"""METRICS = [None, "manhattan", "euclid"]
+"""maze = Matrix('maze1.txt', metric)
+ai = Agent(maze, metric)
+done, result = ai.start_greedy(1)
+if done:
+    print(result.getPosOnPath())
+maze.display_maze()"""
+METRICS = [None, "manhattan", "euclid"]
 metric = METRICS[1]
 
 maze = Matrix('maze1.txt', metric)
 ai = Agent(maze, metric)
-done, result = ai.startGreedy()
-if done:
-    print(result.getPosOnPath())
-    maze.displayMaze()"""
-pygame_application = Graphical.Pygame_Window()
-pygame_application.draw()
+Graphical.Pygame_Window(ai, "greed")
