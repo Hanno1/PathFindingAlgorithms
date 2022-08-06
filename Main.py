@@ -1,20 +1,37 @@
 import copy
 import math
 import pygame
-
 import Graphical
+
+
+pygame.font.init()
 
 MOVE_COST = 1
 COLORS_DICT = {"#": (0, 0, 0), " ": (255, 255, 255), "A": (0, 255, 0), "B": (255, 0, 0), "-": (150, 189, 128),
                "?": (235, 231, 113)}
+FONT = pygame.font.SysFont("comicSans", 50)
+TEXT_COLOR = (255, 0, 0)
 
 
 class Tile:
-    def __init__(self, description, distance, on_the_way=False, searched=False):
+    def __init__(self, description, distance_to_end, path_cost=-1, on_the_way=False, searched=False):
         self.name = description
-        self.distance = distance
+        self.distance_to_end = distance_to_end
+        self.path_cost = path_cost
         self.on_the_way = on_the_way
         self.searched = searched
+
+    def set_distance_to_end(self, i):
+        self.distance_to_end = i
+
+    def set_path_cost(self, i):
+        self.path_cost = i
+
+    def set_on_the_way(self, b):
+        self.on_the_way = b
+
+    def set_searched(self, b):
+        self.searched = b
 
 
 class Node:
@@ -27,12 +44,20 @@ class Node:
     def move_node_and_copy(self, action, cost):
         state = copy.deepcopy(self.state)
         if action == "up":
+            if self.action == "down":
+                return None
             state[1] -= 1
         elif action == "down":
+            if self.action == "up":
+                return None
             state[1] += 1
         elif action == "right":
+            if self.action == "left":
+                return None
             state[0] += 1
         elif action == "left":
+            if self.action == "right":
+                return None
             state[0] -= 1
         else:
             print("Unknown Action " + action)
@@ -219,19 +244,27 @@ class Agent:
         while self.frontier.length > 0:
             element = self.frontier.pop()
             if element.state not in self.explored_set:
+                self.matrix.set_search_tile(element.state)
                 if self.matrix.goal_test(element.state):
-                    self.matrix.update_matrix(self.explored_set, element)
+                    self.matrix.update_matrix(element)
                     return True, element
                 self.explored_set.append(element.state)
                 possible_actions = self.matrix.getPossibleActions(element.state)
                 for action in possible_actions:
-                    self.frontier.push(element.move_node_and_copy(action, MOVE_COST))
+                    new_el = element.move_node_and_copy(action, MOVE_COST)
+                    if new_el is not None:
+                        self.matrix.set_path_cost(new_el.state[1], new_el.state[0], new_el.path_cost)
+                        self.frontier.push(new_el)
             if steps is not None:
                 steps -= 1
                 if steps == 0:
-                    self.matrix.update_matrix(self.explored_set, element)
                     return False, None
         return False, None
+
+    def reset(self):
+        self.frontier = Stack()
+        self.explored_set = []
+        self.matrix.reset()
 
 
 class Matrix:
@@ -241,6 +274,7 @@ class Matrix:
         self.start_position = [0, 0]
         self.end_position = [0, 0]
         self.load_maze(path)
+        self.start_matrix = copy.deepcopy(self.matrix)
 
     def load_maze(self, path):
         file = open(path, 'r')
@@ -261,10 +295,13 @@ class Matrix:
         mat = [[Tile('0', 0) for i in range(x_length)] for j in range(y_length)]
         for i in range(x_length):
             for j in range(y_length):
-                mat[j][i] = Tile(rows[j][i], get_distance([j, i], self.end_position, self.metric))
+                mat[j][i] = Tile(rows[j][i], get_distance([i, j], self.end_position, self.metric))
 
         file.close()
         self.matrix = mat
+
+    def reset(self):
+        self.matrix = copy.deepcopy(self.start_matrix)
 
     def getPossibleActions(self, pos):
         possible_actions = []
@@ -300,10 +337,7 @@ class Matrix:
         else:
             return False
 
-    def update_matrix(self, explored_set, element):
-        for searchedPos in explored_set:
-            self.remove_on_the_way_tile(searchedPos)
-            self.set_search_tile(searchedPos)
+    def update_matrix(self, element):
         goal_path = element.get_pos_on_path()
         for pos in goal_path:
             self.set_on_the_way_tile(pos)
@@ -337,18 +371,39 @@ class Matrix:
                         r += self.matrix[row][col].name
             print(r)
 
-    def display_maze_pygame(self, window, square_length, offset):
+    def display_maze_pygame(self, window, square_length, offset, alg, left_offset, upper_offset):
         mult = offset + square_length
         for row in range(len(self.matrix)):
             for col in range(len(self.matrix[0])):
-                tile = self.matrix[row][col]
-                tile_name = tile.name
-                if tile.on_the_way:
-                    tile_name = "-"
-                elif tile.searched:
-                    tile.name = "?"
-                color = COLORS_DICT.get(tile_name)
-                pygame.draw.rect(window, color, (col*mult, row*mult, square_length, square_length))
+                self._display_square_pygame(row, col, mult, window, square_length, alg, left_offset, upper_offset)
+
+    def set_path_cost(self, row, col, cost):
+        self.matrix[row][col].path_cost = cost
+
+    def _display_square_pygame(self, row, col, mult, window, square_length, algorithm, left_offset, upper_offset):
+        tile = self.matrix[row][col]
+        tile_name = tile.name
+        if tile.on_the_way:
+            tile_name = "-"
+        elif tile.searched:
+            tile.name = "?"
+        color = COLORS_DICT.get(tile_name)
+        pygame.draw.rect(window, color, (col * mult + left_offset, row * mult + upper_offset, square_length, square_length))
+        if tile_name != "A" and tile_name != "B" and tile_name != "#":
+            if algorithm == "greed":
+                if tile.path_cost != -1:
+                    draw_text(window, row, col, mult, str(tile.distance_to_end), square_length,
+                              left_offset, upper_offset)
+            elif algorithm == "astar":
+                if tile.path_cost != -1:
+                    draw_text(window, row, col, mult, str(tile.distance_to_end) + "+" + str(tile.path_cost),
+                              square_length, left_offset, upper_offset)
+
+
+def draw_text(window, row, col, mult, text, square_length, left_offset, upper_offset):
+    text_drawing = FONT.render(text, True, TEXT_COLOR)
+    window.blit(text_drawing, (left_offset + col * mult + square_length / 2 - text_drawing.get_width() / 2,
+                               upper_offset + row * mult + square_length / 2 - text_drawing.get_height() / 2))
 
 
 def get_distance(pos_1, pos_2, metric):
@@ -378,4 +433,4 @@ metric = METRICS[1]
 
 maze = Matrix('maze1.txt', metric)
 ai = Agent(maze, metric)
-Graphical.Pygame_Window(ai, "greed")
+Graphical.Pygame_Window(ai)
