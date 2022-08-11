@@ -1,0 +1,1 @@
+A graphic Interface for Path Finding Algorithm. Just run "graphic.py" to use it.

@@ -1,15 +1,14 @@
 import copy
 import math
 import pygame
-import Graphical
-
 
 pygame.font.init()
 
 MOVE_COST = 1
-COLORS_DICT = {"#": (0, 0, 0), " ": (255, 255, 255), "A": (0, 255, 0), "B": (255, 0, 0), "-": (150, 189, 128),
+COLORS_DICT = {"#": (89, 93, 97), " ": (255, 255, 255), "A": (0, 255, 0), "B": (255, 0, 0), "-": (150, 189, 128),
                "?": (235, 231, 113)}
-FONT = pygame.font.SysFont("comicSans", 50)
+GREEDY_FONT = pygame.font.SysFont("comicSans", 25)
+A_STAR_FONT = pygame.font.SysFont("comicSans", 15)
 TEXT_COLOR = (255, 0, 0)
 
 
@@ -186,7 +185,7 @@ class A_star:
         return copy.deepcopy(min_element)
 
 
-def getResultState(pos, action):
+def get_result_state(pos, action):
     x_pos = pos[0]
     y_pos = pos[1]
     if action == "up":
@@ -206,75 +205,74 @@ class Agent:
     frontier = None
     explored_set = []
 
-    def __init__(self, matrix, metric=None):
-        self.matrix = matrix
-        start = matrix.start_position
-        self.initial_state = [start[0], start[1]]
-        self.metric = metric
+    def __init__(self):
+        pass
 
-    def start_greedy(self, steps=None):
-        self.frontier = Greedy(self.matrix.end_position, self.metric)
-        node = Node(self.initial_state, None, None, 0)
+    def start_greedy(self, matrix, steps=None):
+        self.frontier = Greedy(matrix.end_position, matrix.metric)
+        node = Node(get_initial_state(matrix), None, None, 0)
         self.frontier.push(node)
         self.explored_set = []
-        return self.explore_maze(steps)
+        return self.__explore_maze(matrix, steps)
 
-    def start_a_star(self, steps=None):
-        self.frontier = A_star(self.matrix.end_position, self.metric)
-        node = Node(self.initial_state, None, None, 0)
+    def start_a_star(self, matrix, steps=None):
+        self.frontier = A_star(matrix.end_position, matrix.metric)
+        node = Node(get_initial_state(matrix), None, None, 0)
         self.frontier.push(node)
         self.explored_set = []
-        return self.explore_maze(steps)
+        return self.__explore_maze(matrix, steps)
 
-    def start_breadth_search(self, steps=None):
+    def start_breadth_search(self, matrix, steps=None):
         self.frontier = Queue()
-        node = Node(self.initial_state, None, None, 0)
+        node = Node(get_initial_state(matrix), None, None, 0)
         self.frontier.push(node)
         self.explored_set = []
-        return self.explore_maze(steps)
+        return self.__explore_maze(matrix, steps)
 
-    def start_depth_search(self, steps=None):
+    def start_depth_search(self, matrix, steps=None):
         self.frontier = Stack()
-        node = Node(self.initial_state, None, None, 0)
+        node = Node(get_initial_state(matrix), None, None, 0)
         self.frontier.push(node)
         self.explored_set = []
-        return self.explore_maze(steps)
+        return self.__explore_maze(matrix, steps)
 
-    def explore_maze(self, steps):
+    def continue_exploring(self, matrix, steps):
+        return self.__explore_maze(matrix, steps)
+
+    def __explore_maze(self, matrix, steps):
         while self.frontier.length > 0:
             element = self.frontier.pop()
             if element.state not in self.explored_set:
-                self.matrix.set_search_tile(element.state)
-                if self.matrix.goal_test(element.state):
-                    self.matrix.update_matrix(element)
+                matrix.set_search_tile(element.state)
+                if matrix.goal_test(element.state):
+                    matrix.update_matrix(element)
                     return True, element
                 self.explored_set.append(element.state)
-                possible_actions = self.matrix.getPossibleActions(element.state)
+                possible_actions = matrix.getPossibleActions(element.state)
                 for action in possible_actions:
                     new_el = element.move_node_and_copy(action, MOVE_COST)
                     if new_el is not None:
-                        self.matrix.set_path_cost(new_el.state[1], new_el.state[0], new_el.path_cost)
+                        matrix.set_path_cost(new_el.state[1], new_el.state[0], new_el.path_cost)
                         self.frontier.push(new_el)
             if steps is not None:
                 steps -= 1
                 if steps == 0:
-                    return False, None
+                    return False, element
         return False, None
-
-    def reset(self):
-        self.frontier = Stack()
-        self.explored_set = []
-        self.matrix.reset()
 
 
 class Matrix:
-    def __init__(self, path, metric=None):
-        self.matrix = None
-        self.metric = metric
+    def __init__(self, path=None, metric=None):
+        self.tile_maze = None
+        self.simple_maze = None
+        self.initial_simple_maze = None
+        self.initial_tile_maze = None
+
         self.start_position = [0, 0]
         self.end_position = [0, 0]
-        self.load_maze(path)
-        self.start_matrix = copy.deepcopy(self.matrix)
+        self.metric = metric
+        if path is not None:
+            self.load_maze(path)
 
     def load_maze(self, path):
         file = open(path, 'r')
@@ -292,116 +290,175 @@ class Matrix:
                     self.start_position = [i, y_length]
             y_length += 1
 
-        mat = [[Tile('0', 0) for i in range(x_length)] for j in range(y_length)]
+        self.tile_maze = [[Tile('0', 0) for i in range(x_length)] for j in range(y_length)]
+        self.simple_maze = [["#" for i in range(x_length)] for j in range(y_length)]
         for i in range(x_length):
             for j in range(y_length):
-                mat[j][i] = Tile(rows[j][i], get_distance([i, j], self.end_position, self.metric))
-
+                self.tile_maze[j][i] = Tile(rows[j][i], get_distance([i, j], self.end_position, self.metric))
+                self.simple_maze[j][i] = rows[j][i]
+        self.initial_simple_maze = copy.deepcopy(self.simple_maze)
+        self.initial_tile_maze = copy.deepcopy(self.tile_maze)
         file.close()
-        self.matrix = mat
 
-    def reset(self):
-        self.matrix = copy.deepcopy(self.start_matrix)
+    def init_matrix(self, rows, cols, start, end):
+        start_x = start[0]
+        start_y = start[1]
+        end_x = end[0]
+        end_y = end[1]
+
+        self.start_position = start
+        self.end_position = end
+
+        self.simple_maze = [["#" for i in range(cols)] for j in range(rows)]
+        self.tile_maze = [[Tile("#", 0) for i in range(cols)] for j in range(rows)]
+        for row in range(rows):
+            for col in range(cols):
+                if row == start_y and col == start_x:
+                    self.tile_maze[row][col] = Tile("A", get_distance([col, row], self.end_position, self.metric))
+                    self.simple_maze[row][col] = "A"
+                elif row == end_y and col == end_x:
+                    self.tile_maze[row][col] = Tile("B", get_distance([col, row], self.end_position, self.metric))
+                    self.simple_maze[row][col] = "B"
+                elif row != 0 and col != 0 and row != rows - 1 and col != cols - 1:
+                    self.tile_maze[row][col] = Tile(" ", get_distance([col, row], self.end_position, self.metric))
+                    self.simple_maze[row][col] = " "
+        self.initial_simple_maze = copy.deepcopy(self.simple_maze)
+        self.initial_tile_maze = copy.deepcopy(self.tile_maze)
 
     def getPossibleActions(self, pos):
         possible_actions = []
         # move Up
         pos[1] -= 1
-        if self.get_position_value(pos) != '#':
+        if self.get_simple_position(pos) != '#':
             possible_actions.append("up")
         pos[1] += 2
-        if self.get_position_value(pos) != '#':
+        if self.get_simple_position(pos) != '#':
             possible_actions.append("down")
         pos[1] -= 1
         pos[0] -= 1
-        if self.get_position_value(pos) != '#':
+        if self.get_simple_position(pos) != '#':
             possible_actions.append("left")
         pos[0] += 2
-        if self.get_position_value(pos) != '#':
+        if self.get_simple_position(pos) != '#':
             possible_actions.append("right")
         pos[0] -= 1
         return possible_actions
 
-    def get_position_value(self, pos):
+    def change_position(self, pos, new_value):
         x_pos = pos[0]
         y_pos = pos[1]
-        if 0 <= x_pos < len(self.matrix[0]) and 0 <= y_pos < len(self.matrix):
-            return self.matrix[y_pos][x_pos].name
+        self.simple_maze[y_pos][x_pos] = new_value
+        self.tile_maze[y_pos][x_pos].name = new_value
+        self.initial_simple_maze[y_pos][x_pos] = new_value
+        self.initial_tile_maze[y_pos][x_pos].name = new_value
+
+    def get_simple_position(self, pos):
+        x_pos = pos[0]
+        y_pos = pos[1]
+        if 0 <= x_pos < len(self.simple_maze[0]) and 0 <= y_pos < len(self.simple_maze):
+            return self.simple_maze[y_pos][x_pos]
         else:
             print("Unavailable Position")
             raise ValueError
 
     def goal_test(self, pos):
-        if self.get_position_value(pos) == 'B':
+        if self.get_simple_position(pos) == 'B':
             return True
         else:
             return False
 
-    def update_matrix(self, element):
-        goal_path = element.get_pos_on_path()
+    def update_matrix(self, node):
+        goal_path = node.get_pos_on_path()
         for pos in goal_path:
             self.set_on_the_way_tile(pos)
 
     def set_search_tile(self, pos):
         if (pos[0] != self.start_position[0] or pos[1] != self.start_position[1]) and \
                 (pos[0] != self.end_position[0] or pos[1] != self.end_position[1]):
-            self.matrix[pos[1]][pos[0]].searched = True
+            self.tile_maze[pos[1]][pos[0]].searched = True
 
     def set_on_the_way_tile(self, pos):
         if (pos[0] != self.start_position[0] or pos[1] != self.start_position[1]) and \
                 (pos[0] != self.end_position[0] or pos[1] != self.end_position[1]):
-            self.matrix[pos[1]][pos[0]].on_the_way = True
+            self.tile_maze[pos[1]][pos[0]].on_the_way = True
 
     def remove_on_the_way_tile(self, pos):
-        self.matrix[pos[1]][pos[0]].on_the_way = False
+        self.tile_maze[pos[1]][pos[0]].on_the_way = False
 
-    def display_maze(self, pos=None):
-        for row in range(len(self.matrix)):
+    def set_path_cost(self, row, col, new_cost):
+        if 0 <= row < len(self.tile_maze) and 0 <= col < len(self.tile_maze[0]):
+            self.tile_maze[row][col].set_path_cost(new_cost)
+        else:
+            print("Unavailable Position")
+            raise ValueError
+
+    def display_tile_maze(self, pos=None):
+        for row in range(len(self.tile_maze)):
             r = ""
-            for col in range(len(self.matrix[0])):
+            for col in range(len(self.tile_maze[0])):
                 if pos is not None and row == pos[1] and col == pos[0]:
                     r += "*"
                 else:
-                    tile = self.matrix[row][col]
+                    tile = self.tile_maze[row][col]
                     if tile.on_the_way:
                         r += "-"
                     elif tile.searched:
                         r += "?"
                     else:
-                        r += self.matrix[row][col].name
+                        r += self.tile_maze[row][col].name
             print(r)
 
-    def display_maze_pygame(self, window, square_length, offset, alg, left_offset, upper_offset):
+    def display_simple_maze(self, pos=None):
+        for row in range(len(self.simple_maze)):
+            r = ""
+            for col in range(len(self.simple_maze[0])):
+                if pos is not None and row == pos[1] and col == pos[0]:
+                    r += "*"
+                else:
+                    description = self.simple_maze[row][col]
+                    r += description
+            print(r)
+
+    def display_maze_pygame(self, window, square_length, offset, left_offset, upper_offset, alg=None):
         mult = offset + square_length
-        for row in range(len(self.matrix)):
-            for col in range(len(self.matrix[0])):
+        for row in range(len(self.tile_maze)):
+            for col in range(len(self.tile_maze[0])):
                 self._display_square_pygame(row, col, mult, window, square_length, alg, left_offset, upper_offset)
 
-    def set_path_cost(self, row, col, cost):
-        self.matrix[row][col].path_cost = cost
-
     def _display_square_pygame(self, row, col, mult, window, square_length, algorithm, left_offset, upper_offset):
-        tile = self.matrix[row][col]
+        tile = self.tile_maze[row][col]
+
         tile_name = tile.name
         if tile.on_the_way:
             tile_name = "-"
         elif tile.searched:
             tile.name = "?"
         color = COLORS_DICT.get(tile_name)
-        pygame.draw.rect(window, color, (col * mult + left_offset, row * mult + upper_offset, square_length, square_length))
+        pygame.draw.rect(window, color,
+                         (col * mult + left_offset, row * mult + upper_offset, square_length, square_length))
         if tile_name != "A" and tile_name != "B" and tile_name != "#":
             if algorithm == "greed":
                 if tile.path_cost != -1:
-                    draw_text(window, row, col, mult, str(tile.distance_to_end), square_length,
-                              left_offset, upper_offset)
+                    draw_text_greedy(window, row, col, mult, str(tile.distance_to_end), square_length,
+                                     left_offset, upper_offset)
             elif algorithm == "astar":
                 if tile.path_cost != -1:
-                    draw_text(window, row, col, mult, str(tile.distance_to_end) + "+" + str(tile.path_cost),
-                              square_length, left_offset, upper_offset)
+                    draw_text_a_star(window, row, col, mult, str(tile.distance_to_end) + "+" + str(tile.path_cost),
+                                     square_length, left_offset, upper_offset)
+
+    def reset_matrix(self):
+        self.simple_maze = copy.deepcopy(self.initial_simple_maze)
+        self.tile_maze = copy.deepcopy(self.initial_tile_maze)
 
 
-def draw_text(window, row, col, mult, text, square_length, left_offset, upper_offset):
-    text_drawing = FONT.render(text, True, TEXT_COLOR)
+def draw_text_greedy(window, row, col, mult, text, square_length, left_offset, upper_offset):
+    text_drawing = GREEDY_FONT.render(text, True, TEXT_COLOR)
+    window.blit(text_drawing, (left_offset + col * mult + square_length / 2 - text_drawing.get_width() / 2,
+                               upper_offset + row * mult + square_length / 2 - text_drawing.get_height() / 2))
+
+
+def draw_text_a_star(window, row, col, mult, text, square_length, left_offset, upper_offset):
+    text_drawing = A_STAR_FONT.render(text, True, TEXT_COLOR)
     window.blit(text_drawing, (left_offset + col * mult + square_length / 2 - text_drawing.get_width() / 2,
                                upper_offset + row * mult + square_length / 2 - text_drawing.get_height() / 2))
 
@@ -413,7 +470,9 @@ def get_distance(pos_1, pos_2, metric):
     y_pos = pos_1[1]
     end_x = pos_2[0]
     end_y = pos_2[1]
-    if metric == "manhattan":
+    if metric is None:
+        return 1
+    elif metric == "manhattan":
         return abs(x_pos - end_x) + abs(y_pos - end_y)
     elif metric == "euclid":
         return math.sqrt((x_pos - end_x) ** 2 + abs(y_pos - end_y) ** 2)
@@ -422,15 +481,20 @@ def get_distance(pos_1, pos_2, metric):
         raise ValueError
 
 
-"""maze = Matrix('maze1.txt', metric)
-ai = Agent(maze, metric)
-done, result = ai.start_greedy(1)
-if done:
-    print(result.getPosOnPath())
-maze.display_maze()"""
-METRICS = [None, "manhattan", "euclid"]
+def get_initial_state(matrix):
+    start_pos = matrix.start_position
+    return [start_pos[0], start_pos[1]]
+
+
+"""METRICS = [None, "manhattan", "euclid"]
 metric = METRICS[1]
 
 maze = Matrix('maze1.txt', metric)
+maze.display_tile_maze()
 ai = Agent(maze, metric)
-Graphical.Pygame_Window(ai)
+
+res, node = ai.start_greedy(maze, 1)
+while not res:
+    res, node = ai.continue_exploring(maze, 1)
+    maze.display_tile_maze()
+# Graphical.Pygame_Window(ai, COLORS_DICT)"""
